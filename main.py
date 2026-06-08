@@ -7,7 +7,7 @@ from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 from pymongo import MongoClient
 from pymongo.server_api import ServerApi
-from dotenv import dotenv_values
+from dotenv import load_dotenv
 from bson import ObjectId
 import certifi
 from datetime import datetime
@@ -26,15 +26,17 @@ os.makedirs(UPLOAD_DIR, exist_ok=True)
 app.mount("/uploads", StaticFiles(directory="uploads"), name="uploads")
 
 # Load environment variables
-config = dotenv_values(".env")
-mongodb_uri = os.getenv("MONGODB_URL")
+load_dotenv()
 
-# MongoDB Connection
-client = MongoClient(
-    uri, 
-    server_api=ServerApi(version='1'),
-    tlsCAFile=certifi.where()
-)
+# Get MongoDB URI from environment
+mongodb_uri = os.getenv("MONGODB_URL")
+database_name = os.getenv("DATABASE_NAME", "property_db")
+
+if not mongodb_uri:
+    raise ValueError("MONGODB_URL environment variable is not set")
+
+# Connect to MongoDB
+client = MongoClient(mongodb_uri, server_api=ServerApi(version='1'))
 
 try:
     client.admin.command('ping')
@@ -42,9 +44,9 @@ try:
 except Exception as e:
     print(f"❌ Connection failed: {e}")
 
-db = client[config["DATABASE_NAME"]]
+# Use database and collections
+db = client[database_name]
 collection = db["properties"]
-# Expenses collection
 expenses_collection = db["expenses"]
 
 # ✅ Response model for GET requests
@@ -62,13 +64,13 @@ class PropertyCreateResponse(BaseModel):
     image_url: str
     message: str = "Property created successfully"
 
-    # Expense Model
+# Expense Model
 class Expense(BaseModel):
     title: str
     category: str
     subCategory: str
     amount: float
-    date: str  # Keep as string, not datetime
+    date: str
     notes: Optional[str] = None
     vendorName: Optional[str] = None
 
@@ -103,7 +105,7 @@ def get_property(property_id: str):
     except:
         raise HTTPException(status_code=400, detail="Invalid property ID")
 
-# ✅ UPDATED POST Endpoint with proper FastAPI documentation
+# POST Endpoint for properties
 @app.post(
     "/properties",
     response_model=PropertyCreateResponse,
@@ -120,18 +122,6 @@ async def create_property(
     ownerName: Optional[str] = Form(None, description="Owner's name (optional)"),
     contact: Optional[str] = Form(None, description="Contact number (optional)"),
 ):
-    """
-    Create a new property with image upload.
-    
-    - **image**: Property photo (required)
-    - **title**: Property title (required)
-    - **description**: Full property description (required)
-    - **price**: Price in Rupees (required)
-    - **location**: Location address (required)
-    - **type**: BHK type or property category (required)
-    - **ownerName**: Owner's name (optional)
-    - **contact**: Contact phone number (optional)
-    """
     try:
         # Validate image format
         file_extension = os.path.splitext(image.filename)[1].lower()
@@ -178,8 +168,7 @@ async def create_property(
         print(f"❌ Error creating property: {e}")
         raise HTTPException(status_code=500, detail=f"Server error: {str(e)}")
 
-
-#Expense management endpoints
+# Expense management endpoints
 @app.post("/expenses")
 async def create_expense(expense: Expense):
     expense_dict = expense.dict()
@@ -207,9 +196,7 @@ async def get_total_expenses():
 @app.put("/expenses/{expenseId}")
 async def update_expense(expenseId: str, expense: Expense):
     try:
-        # Convert string to datetime if needed for MongoDB
         expense_dict = expense.dict()
-        # MongoDB can store ISO string directly, no conversion needed
         
         result = expenses_collection.update_one(
             {"_id": ObjectId(expenseId)},
