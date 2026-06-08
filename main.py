@@ -27,7 +27,7 @@ app.mount("/uploads", StaticFiles(directory="uploads"), name="uploads")
 
 # Load environment variables
 config = dotenv_values(".env")
-uri = config["MONGODB_URL"]
+mongodb_uri = os.getenv("MONGODB_URL")
 
 # MongoDB Connection
 client = MongoClient(
