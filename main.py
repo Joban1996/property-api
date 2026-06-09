@@ -140,7 +140,7 @@ async def create_property(
             shutil.copyfileobj(image.file, buffer)
         
         # Generate image URL
-        image_url = f"http://localhost:8000/uploads/{unique_filename}"
+        image_url = f"https://property-api-fpbk.onrender.com/uploads/{unique_filename}"
         
         # Create property document
         property_data = {
