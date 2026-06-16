@@ -11,6 +11,7 @@ from dotenv import load_dotenv
 from bson import ObjectId
 import certifi
 from datetime import datetime
+from openai import OpenAI
 
 app = FastAPI(
     title="Property API",
@@ -209,3 +210,41 @@ async def update_expense(expenseId: str, expense: Expense):
         return {"success": True, "message": "Expense updated successfully"}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+
+# AI Generated highlights api and code
+
+# Initialize OpenAI client
+client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))     
+
+@app.post("/ai/highlights/{property_id}")
+async def generate_highlights(property_id: str):
+    # Fetch property from database
+    property_doc = collection.find_one({"_id": ObjectId(property_id)})
+    if not property_doc:
+        raise HTTPException(404, "Property not found")
+    
+    # Create prompt for OpenAI
+    prompt = f"""
+    Generate 4-5 short, attractive bullet points highlighting the best features of this property.
+    Each bullet point should be max 5 words. Be specific and compelling.
+    
+    Property Details:
+    - Title: {property_doc['title']}
+    - Description: {property_doc['description']}
+    - Location: {property_doc['location']}
+    - Price: ₹{property_doc['price']}
+    
+    Format as JSON array of strings.
+    Example: ["Spacious 2BHK layout", "Near IT park", "Modular kitchen"]
+    """
+    
+    response = client.chat.completions.create(
+        model="gpt-3.5-turbo",
+        messages=[{"role": "user", "content": prompt}],
+        temperature=0.7,
+        max_tokens=200,
+    )
+    
+    highlights = json.loads(response.choices[0].message.content)
+    return {"highlights": highlights}
