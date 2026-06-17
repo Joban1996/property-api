@@ -11,7 +11,7 @@ from dotenv import load_dotenv
 from bson import ObjectId
 import certifi
 from datetime import datetime
-from openai import OpenAI
+from google import genai
 
 app = FastAPI(
     title="Property API",
@@ -212,10 +212,8 @@ async def update_expense(expenseId: str, expense: Expense):
         raise HTTPException(status_code=500, detail=str(e))
 
 
-# AI Generated highlights api and code
-
-# Initialize OpenAI client
-client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))     
+# Initialize Gemini client
+gemini_client = genai.Client(api_key=os.getenv("GEMINI_API_KEY"))
 
 @app.post("/ai/highlights/{property_id}")
 async def generate_highlights(property_id: str):
@@ -224,27 +222,38 @@ async def generate_highlights(property_id: str):
     if not property_doc:
         raise HTTPException(404, "Property not found")
     
-    # Create prompt for OpenAI
     prompt = f"""
-    Generate 4-5 short, attractive bullet points highlighting the best features of this property.
-    Each bullet point should be max 5 words. Be specific and compelling.
+    Generate 4-5 short bullet points highlighting the best features of this property.
+    Each bullet point should be max 5 words.
     
-    Property Details:
-    - Title: {property_doc['title']}
-    - Description: {property_doc['description']}
-    - Location: {property_doc['location']}
-    - Price: ₹{property_doc['price']}
+    Property: {property_doc['title']}
+    Description: {property_doc['description']}
+    Location: {property_doc['location']}
+    Price: ₹{property_doc['price']}
     
-    Format as JSON array of strings.
-    Example: ["Spacious 2BHK layout", "Near IT park", "Modular kitchen"]
+    Return as JSON array of strings.
     """
     
-    response = client.chat.completions.create(
-        model="gpt-3.5-turbo",
-        messages=[{"role": "user", "content": prompt}],
-        temperature=0.7,
-        max_tokens=200,
-    )
-    
-    highlights = json.loads(response.choices[0].message.content)
-    return {"highlights": highlights}
+    try:
+        response = gemini_client.models.generate_content(
+            model="gemini-2.0-flash",
+            contents=prompt
+        )
+        
+        highlights_text = response.text
+        
+        # Clean up the response
+        highlights_text = highlights_text.replace('```json', '').replace('```', '').strip()
+        
+        # Try to parse as JSON
+        try:
+            highlights = json.loads(highlights_text)
+        except:
+            # If not valid JSON, split by newline
+            highlights = [h.strip().replace('•', '').replace('-', '').strip() 
+                         for h in highlights_text.split('\n') if h.strip()]
+        
+        return {"highlights": highlights[:5]}
+        
+    except Exception as e:
+        raise HTTPException(500, detail=f"AI generation failed: {str(e)}")
