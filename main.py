@@ -236,7 +236,7 @@ async def generate_highlights(property_id: str):
     
     try:
         response = gemini_client.models.generate_content(
-            model="gemini-2.0-flash",
+            model="gemini-2.0-flash-lite",
             contents=prompt
         )
         
