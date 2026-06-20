@@ -212,8 +212,8 @@ async def update_expense(expenseId: str, expense: Expense):
         raise HTTPException(status_code=500, detail=str(e))
 
 
-# Initialize Gemini client
-client = Groq(api_key=os.getenv("GROQ_API_KEY"))
+# Initialize Groq client
+groq_client = Groq(api_key=os.getenv("GROQ_API_KEY"))
 
 @app.post("/ai/highlights/{property_id}")
 async def generate_highlights(property_id: str):
@@ -235,17 +235,23 @@ async def generate_highlights(property_id: str):
     """
     
     try:
-        response = client.models.generate_content(
-            model="gemini-2.0-flash-lite",
-            contents=prompt
+        # ✅ CORRECT GROQ SYNTAX
+        response = groq_client.chat.completions.create(
+            model="llama-3.3-70b-versatile",
+            messages=[
+                {"role": "system", "content": "You are a real estate expert. Generate concise, attractive property highlights."},
+                {"role": "user", "content": prompt}
+            ],
+            temperature=0.7,
+            max_tokens=200,
         )
         
-        highlights_text = response.text
+        highlights_text = response.choices[0].message.content
         
-        # Clean up the response
+        # Clean up response
         highlights_text = highlights_text.replace('```json', '').replace('```', '').strip()
         
-        # Try to parse as JSON
+        # Parse as JSON
         try:
             highlights = json.loads(highlights_text)
         except:
