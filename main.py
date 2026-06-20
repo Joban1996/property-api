@@ -11,7 +11,7 @@ from dotenv import load_dotenv
 from bson import ObjectId
 import certifi
 from datetime import datetime
-from google import genai
+from groq import Groq
 
 app = FastAPI(
     title="Property API",
@@ -213,7 +213,7 @@ async def update_expense(expenseId: str, expense: Expense):
 
 
 # Initialize Gemini client
-gemini_client = genai.Client(api_key=os.getenv("GEMINI_API_KEY"))
+client = Groq(api_key=os.getenv("GROQ_API_KEY"))
 
 @app.post("/ai/highlights/{property_id}")
 async def generate_highlights(property_id: str):
@@ -235,7 +235,7 @@ async def generate_highlights(property_id: str):
     """
     
     try:
-        response = gemini_client.models.generate_content(
+        response = client.models.generate_content(
             model="gemini-2.0-flash-lite",
             contents=prompt
         )
