@@ -215,7 +215,7 @@ async def update_expense(expenseId: str, expense: Expense):
 # Initialize Groq client
 groq_client = Groq(api_key=os.getenv("GROQ_API_KEY"))
 
-@app.post("/ai/highlights/{property_id}")
+@app.get("/ai/highlights/{property_id}")
 async def generate_highlights(property_id: str):
     # Fetch property from database
     property_doc = collection.find_one({"_id": ObjectId(property_id)})
