@@ -58,6 +58,7 @@ class PropertyResponse(BaseModel):
     price: str
     location: str
     image_url: str = ""
+    contact: str = "" 
 
 # ✅ Response model for POST requests
 class PropertyCreateResponse(BaseModel):
