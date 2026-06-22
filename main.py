@@ -75,14 +75,15 @@ class Expense(BaseModel):
     notes: Optional[str] = None
     vendorName: Optional[str] = None
 
-def property_helper(property_doc) -> dict:
+    def property_helper(property_doc) -> dict:
     return {
         "id": str(property_doc["_id"]),
         "title": property_doc["title"],
         "description": property_doc["description"],
-        "price": str(property_doc["price"]), 
+        "price": str(property_doc["price"]),
         "location": property_doc["location"],
         "image_url": property_doc.get("image_url", ""),
+        "contact": property_doc.get("contact", ""),  # ✅ Add this line
     }
 
 @app.get("/")
