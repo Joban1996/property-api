@@ -37,11 +37,12 @@ async def signup(user_data: UserSignup, db=Depends(get_db)):
     
     # Create new user
     new_user = create_user(email=user_data.email, password=user_data.password)
-    
+    print(type(new_user))
+    print(new_user)
     # Create access token
     access_token_expires = timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
     access_token = create_access_token(
-        data={"sub": new_user['email']},
+        data={"sub": new_user.email},
         expires_delta=access_token_expires
     )
     
@@ -72,7 +73,7 @@ async def login(form_data: OAuth2PasswordRequestForm = Depends(), db=Depends(get
     # Create access token
     access_token_expires = timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
     access_token = create_access_token(
-        data={"sub": user['email']},
+        data={"sub": user.email},
         expires_delta=access_token_expires
     )
     
@@ -89,7 +90,7 @@ async def get_current_user_info(current_user = Depends(get_current_active_user))
     - Requires valid JWT token in Authorization header
     - Returns user details (excluding password)
     """
-    
+
     return {
         "id": str(current_user["_id"]),
         "email": current_user["email"],
