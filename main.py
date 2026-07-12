@@ -68,8 +68,8 @@ def property_helper(property_doc) -> dict:
         "description": property_doc["description"],
         "price": str(property_doc["price"]),
         "location": property_doc["location"],
-        "image_url": property_doc.get("image_url", ""),
-        "contact": property_doc.get("contact", ""),
+        "image_url": property_doc.get("image_url") or "",
+        "contact": property_doc.get("contact") or "",
     }
 
 
