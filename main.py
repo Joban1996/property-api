@@ -1,17 +1,17 @@
 import os
+import json
 import shutil
 from typing import List, Optional
-from fastapi import FastAPI, HTTPException, File, UploadFile, Form
+from fastapi import FastAPI, HTTPException, File, UploadFile, Form, Depends
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import JSONResponse
-from pydantic import BaseModel
-from pymongo import MongoClient
-from pymongo.server_api import ServerApi
-from dotenv import load_dotenv
+from pydantic import BaseModel, EmailStr
 from bson import ObjectId
-import certifi
 from datetime import datetime
 from groq import Groq
+from database import db, properties_collection, expenses_collection, users_collection
+from routes import auth
+from auth import get_current_active_user
 
 app = FastAPI(
     title="Property API",
@@ -19,36 +19,14 @@ app = FastAPI(
     version="2.0.0"
 )
 
+app.include_router(auth.router)
+
 # Create upload directory
 UPLOAD_DIR = "uploads"
 os.makedirs(UPLOAD_DIR, exist_ok=True)
 
 # Serve uploaded images
 app.mount("/uploads", StaticFiles(directory="uploads"), name="uploads")
-
-# Load environment variables
-load_dotenv()
-
-# Get MongoDB URI from environment
-mongodb_uri = os.getenv("MONGODB_URL")
-database_name = os.getenv("DATABASE_NAME", "property_db")
-
-if not mongodb_uri:
-    raise ValueError("MONGODB_URL environment variable is not set")
-
-# Connect to MongoDB
-client = MongoClient(mongodb_uri, server_api=ServerApi(version='1'))
-
-try:
-    client.admin.command('ping')
-    print("✅ Successfully connected to MongoDB Atlas!")
-except Exception as e:
-    print(f"❌ Connection failed: {e}")
-
-# Use database and collections
-db = client[database_name]
-collection = db["properties"]
-expenses_collection = db["expenses"]
 
 # ✅ Response model for GET requests
 class PropertyResponse(BaseModel):
@@ -58,7 +36,7 @@ class PropertyResponse(BaseModel):
     price: str
     location: str
     image_url: str = ""
-    contact: str = "" 
+    contact: str = ""
 
 # ✅ Response model for POST requests
 class PropertyCreateResponse(BaseModel):
@@ -76,12 +54,19 @@ class Expense(BaseModel):
     notes: Optional[str] = None
     vendorName: Optional[str] = None
 
+# User Signup Model
+class UserSignup(BaseModel):
+    email: EmailStr
+    password: str
+    confirmPassword: str
+
+
 def property_helper(property_doc) -> dict:
     return {
         "id": str(property_doc["_id"]),
         "title": property_doc["title"],
         "description": property_doc["description"],
-        "price": str(property_doc["price"]), 
+        "price": str(property_doc["price"]),
         "location": property_doc["location"],
         "image_url": property_doc.get("image_url", ""),
         "contact": property_doc.get("contact", ""),
@@ -92,22 +77,27 @@ def property_helper(property_doc) -> dict:
 def read_root():
     return {"message": "Property API is running with MongoDB Atlas!"}
 
+
 @app.get("/properties", response_model=List[PropertyResponse])
 def get_properties():
     properties = []
-    for prop in collection.find():
+    for prop in properties_collection.find():
         properties.append(property_helper(prop))
     return properties
+
 
 @app.get("/properties/{property_id}", response_model=PropertyResponse)
 def get_property(property_id: str):
     try:
-        property_doc = collection.find_one({"_id": ObjectId(property_id)})
+        property_doc = properties_collection.find_one({"_id": ObjectId(property_id)})
         if property_doc is None:
             raise HTTPException(status_code=404, detail="Property not found")
         return property_helper(property_doc)
-    except:
+    except HTTPException:
+        raise
+    except Exception:
         raise HTTPException(status_code=400, detail="Invalid property ID")
+
 
 # POST Endpoint for properties
 @app.post(
@@ -125,6 +115,7 @@ async def create_property(
     type: str = Form(..., description="Property type (e.g., '2BHK', '3BHK')"),
     ownerName: Optional[str] = Form(None, description="Owner's name (optional)"),
     contact: Optional[str] = Form(None, description="Contact number (optional)"),
+    current_user = Depends(get_current_active_user),     
 ):
     try:
         # Validate image format
@@ -132,20 +123,20 @@ async def create_property(
         allowed_extensions = ['.jpg', '.jpeg', '.png', '.gif', '.webp']
         if file_extension not in allowed_extensions:
             raise HTTPException(
-                status_code=400, 
+                status_code=400,
                 detail=f"Unsupported image format. Allowed: {', '.join(allowed_extensions)}"
             )
-        
+
         # Save image
         unique_filename = f"{ObjectId()}{file_extension}"
         file_path = os.path.join(UPLOAD_DIR, unique_filename)
-        
+
         with open(file_path, "wb") as buffer:
             shutil.copyfileobj(image.file, buffer)
-        
+
         # Generate image URL
         image_url = f"https://property-api-fpbk.onrender.com/uploads/{unique_filename}"
-        
+
         # Create property document
         property_data = {
             "title": title,
@@ -156,21 +147,23 @@ async def create_property(
             "image_url": image_url,
             "ownerName": ownerName,
             "contact": contact,
+            "ownerId": str(current_user["_id"]), 
         }
-        
-        result = collection.insert_one(property_data)
-        
+
+        result = properties_collection.insert_one(property_data)
+
         return PropertyCreateResponse(
             id=str(result.inserted_id),
             image_url=image_url,
             message="Property created successfully"
         )
-        
+
     except HTTPException:
         raise
     except Exception as e:
         print(f"❌ Error creating property: {e}")
         raise HTTPException(status_code=500, detail=f"Server error: {str(e)}")
+
 
 # Expense management endpoints
 @app.post("/expenses")
@@ -180,6 +173,7 @@ async def create_expense(expense: Expense):
     result = expenses_collection.insert_one(expense_dict)
     return {"success": True, "id": str(result.inserted_id)}
 
+
 @app.get("/expenses")
 async def get_all_expenses():
     expenses = []
@@ -187,6 +181,7 @@ async def get_all_expenses():
         exp["_id"] = str(exp["_id"])
         expenses.append(exp)
     return expenses
+
 
 @app.get("/expenses/total")
 async def get_total_expenses():
@@ -197,20 +192,23 @@ async def get_total_expenses():
     total = result[0]["total"] if result else 0
     return {"total": total}
 
+
 @app.put("/expenses/{expenseId}")
 async def update_expense(expenseId: str, expense: Expense):
     try:
         expense_dict = expense.dict()
-        
+
         result = expenses_collection.update_one(
             {"_id": ObjectId(expenseId)},
             {"$set": expense_dict}
         )
-        
+
         if result.modified_count == 0:
             raise HTTPException(status_code=404, detail="Expense not found")
-        
+
         return {"success": True, "message": "Expense updated successfully"}
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -218,27 +216,27 @@ async def update_expense(expenseId: str, expense: Expense):
 # Initialize Groq client
 groq_client = Groq(api_key=os.getenv("GROQ_API_KEY"))
 
+
 @app.get("/ai/highlights/{property_id}")
 async def generate_highlights(property_id: str):
     # Fetch property from database
-    property_doc = collection.find_one({"_id": ObjectId(property_id)})
+    property_doc = properties_collection.find_one({"_id": ObjectId(property_id)})
     if not property_doc:
         raise HTTPException(404, "Property not found")
-    
+
     prompt = f"""
     Generate 4-5 short bullet points highlighting the best features of this property.
     Each bullet point should be max 5 words.
-    
+
     Property: {property_doc['title']}
     Description: {property_doc['description']}
     Location: {property_doc['location']}
     Price: ₹{property_doc['price']}
-    
+
     Return as JSON array of strings.
     """
-    
+
     try:
-        # ✅ CORRECT GROQ SYNTAX
         response = groq_client.chat.completions.create(
             model="llama-3.3-70b-versatile",
             messages=[
@@ -248,21 +246,21 @@ async def generate_highlights(property_id: str):
             temperature=0.7,
             max_tokens=200,
         )
-        
+
         highlights_text = response.choices[0].message.content
-        
+
         # Clean up response
         highlights_text = highlights_text.replace('```json', '').replace('```', '').strip()
-        
+
         # Parse as JSON
         try:
             highlights = json.loads(highlights_text)
-        except:
+        except Exception:
             # If not valid JSON, split by newline
-            highlights = [h.strip().replace('•', '').replace('-', '').strip() 
+            highlights = [h.strip().replace('•', '').replace('-', '').strip()
                          for h in highlights_text.split('\n') if h.strip()]
-        
+
         return {"highlights": highlights[:5]}
-        
+
     except Exception as e:
         raise HTTPException(500, detail=f"AI generation failed: {str(e)}")
