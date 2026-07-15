@@ -2,14 +2,16 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordRequestForm
 from datetime import timedelta
 from typing import Any
-
+from fastapi.security import OAuth2PasswordBearer
 from models import UserSignup, UserLogin, Token, UserResponse
 from crud import get_user_by_email, create_user, get_user_by_id
 from auth import (
     authenticate_user,
     create_access_token,
     ACCESS_TOKEN_EXPIRE_MINUTES,
-    get_current_active_user
+    get_current_active_user,
+    blacklist_token,
+    oauth2_scheme,
 )
 from database import get_db
 
@@ -96,3 +98,13 @@ async def get_current_user_info(current_user = Depends(get_current_active_user))
         "email": current_user["email"],
         "created_at": current_user.get("created_at")
     }
+
+@router.post("/logout")
+async def logout(token: str = Depends(oauth2_scheme)):
+    """
+    Log out the current user.
+    - Blacklists the token so it can no longer be used
+    - Client should also delete the token locally after this succeeds
+    """
+    blacklist_token(token)
+    return {"message": "Successfully logged out"}

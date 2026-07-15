@@ -6,8 +6,7 @@ from passlib.context import CryptContext
 from fastapi import HTTPException, status, Depends
 from fastapi.security import OAuth2PasswordBearer
 from dotenv import load_dotenv
-
-from database import users_collection
+from database import users_collection,blacklisted_tokens_collection
 
 load_dotenv()
 
@@ -80,6 +79,14 @@ async def get_current_user(token: str = Depends(oauth2_scheme)):
         detail="Could not validate credentials",
         headers={"WWW-Authenticate": "Bearer"},
     )
+    # NEW: reject blacklisted (logged-out) tokens immediately
+    if is_token_blacklisted(token):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Token has been revoked. Please log in again.",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+
     try:
         payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
         email = payload.get("sub")
@@ -97,3 +104,20 @@ async def get_current_user(token: str = Depends(oauth2_scheme)):
 async def get_current_active_user(current_user=Depends(get_current_user)):
     """Get active user"""
     return current_user
+
+#Blacklist token functions
+def blacklist_token(token: str):
+    """Add a token to the blacklist so it can no longer be used"""
+    payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+    expire_time = datetime.utcfromtimestamp(payload["exp"])
+
+    blacklisted_tokens_collection.insert_one({
+        "token": token,
+        "expires_at": expire_time,
+    })
+
+
+def is_token_blacklisted(token: str) -> bool:
+    """Check if a token has been logged out / revoked"""
+    result = blacklisted_tokens_collection.find_one({"token": token})
+    return result is not None    

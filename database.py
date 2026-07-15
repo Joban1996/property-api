@@ -28,6 +28,7 @@ db = client[database_name]
 properties_collection = db["properties"]
 expenses_collection = db["expenses"]
 users_collection = db["users"]  # For authentication
+blacklisted_tokens_collection = db["blacklisted_tokens"]
 
 # Function to get database
 def get_db():
