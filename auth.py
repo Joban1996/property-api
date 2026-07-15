@@ -108,8 +108,13 @@ async def get_current_active_user(current_user=Depends(get_current_user)):
 #Blacklist token functions
 def blacklist_token(token: str):
     """Add a token to the blacklist so it can no longer be used"""
-    payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
-    expire_time = datetime.utcfromtimestamp(payload["exp"])
+    try:
+        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+        expire_time = datetime.utcfromtimestamp(payload["exp"])
+    except JWTError:
+        # Token is already invalid/expired — nothing to blacklist,
+        # it's already unusable. Treat as a no-op, not a crash.
+        return
 
     blacklisted_tokens_collection.insert_one({
         "token": token,
